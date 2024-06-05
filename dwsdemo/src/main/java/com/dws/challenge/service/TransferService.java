@@ -32,6 +32,9 @@ public class TransferService {
   
   @Getter
   private final NotificationService notificationService;
+  
+  String processingFromAccount = null;
+  String processingToAccount = null;
 
   /**
    * This constructor will initialize the services and repository
@@ -62,25 +65,19 @@ public class TransferService {
 		return commonResponse;
 	}
 	
+	
+	//Added logic to validate the incoming account and processing account is same or not. 
+	//If it is same then we will do sync process for other accounts we are not blocking
 	try {
-		synchronized (this) {
-			Account fromAccount =  this.accountsRepository.getAccount(transferAmount.getAccountFromId());
-			Account toAccount=  this.accountsRepository.getAccount(transferAmount.getAccountToId());
+		if((!ObjectUtils.isEmpty(processingFromAccount) && processingFromAccount.equals(transferAmount.getAccountFromId())) || 
+				(!ObjectUtils.isEmpty(processingToAccount) && processingToAccount.equals(transferAmount.getAccountToId()))) {
 			
-			BigDecimal  fromBalance =	fromAccount.getBalance().subtract(transferAmount.getAmountToTransfer());
-			fromAccount.setBalance(fromBalance);
+			synchronized (this) {
+				commonResponse = processAccountTransfer(transferAmount);
+			}
 			
-			
-			BigDecimal  toBalance = toAccount.getBalance().add(transferAmount.getAmountToTransfer());
-			toAccount.setBalance(toBalance);
-			
-			this.accountsRepository.updateAccount(fromAccount);
-			this.accountsRepository.updateAccount(toAccount);
-			
-			commonResponse = new CommonResponse();
-			commonResponse.setData(Map.of("status", "success","accountDetails",fromAccount));
-			
-			amountTransferNotification(transferAmount, fromAccount, toAccount);
+		}else {
+			commonResponse = processAccountTransfer(transferAmount);
 		}
 		
 	} catch(Exception e) {
@@ -90,6 +87,38 @@ public class TransferService {
 	log.info("Exited from transferAmount method. From account {}", transferAmount.getAccountFromId());
 	return commonResponse;
   }
+
+ /**
+  * This method will process the accounts. 
+  * @param transferAmount
+  * @return
+  */
+
+private CommonResponse processAccountTransfer(TransferAmount transferAmount) {
+	processingFromAccount = transferAmount.getAccountFromId();
+	processingToAccount = transferAmount.getAccountFromId();
+	
+	Account fromAccount =  this.accountsRepository.getAccount(transferAmount.getAccountFromId());
+	Account toAccount=  this.accountsRepository.getAccount(transferAmount.getAccountToId());
+	
+	BigDecimal  fromBalance =	fromAccount.getBalance().subtract(transferAmount.getAmountToTransfer());
+	fromAccount.setBalance(fromBalance);
+	
+	
+	BigDecimal  toBalance = toAccount.getBalance().add(transferAmount.getAmountToTransfer());
+	toAccount.setBalance(toBalance);
+	
+	this.accountsRepository.updateAccount(fromAccount);
+	this.accountsRepository.updateAccount(toAccount);
+	
+	CommonResponse commonResponse = new CommonResponse();
+	commonResponse.setData(Map.of("status", "success","accountDetails",fromAccount));
+	
+	amountTransferNotification(transferAmount, fromAccount, toAccount);
+	processingFromAccount = null;
+	processingToAccount = null;
+	return commonResponse;
+}
 
 	/**
 	 * Non-blocking notification process will be called
